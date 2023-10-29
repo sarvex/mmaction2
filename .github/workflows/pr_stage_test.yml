@@ -24,7 +24,7 @@ jobs:
           - torch: 1.8.1
             torchvision: 0.9.1
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
@@ -93,7 +93,7 @@ jobs:
           - torch: 1.8.1
             cuda: 10.2
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
@@ -146,7 +146,7 @@ jobs:
         torchvision: [0.9.1]
         platform: [cpu, cu111]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
