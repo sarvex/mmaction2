@@ -4,7 +4,7 @@
 
 In this section we demonstrate how to prepare an environment with PyTorch.
 
-MMAction2 works on Linux, Windows and macOS. It requires Python 3.7+, CUDA 9.2+ and PyTorch 1.6+.
+MMAction2 works on Linux, Windows and macOS. It requires Python 3.7+, CUDA 10.2+ and PyTorch 1.8+.
 
 ```{note}
 If you are experienced with PyTorch and have already installed it, just skip this part and jump to the [next section](#installation). Otherwise, you can follow these steps for the preparation.
@@ -121,7 +121,7 @@ label_file = 'tools/data/kinetics/label_map_k400.txt'
 model = init_recognizer(config_file, checkpoint_file, device='cpu')  # or device='cuda:0'
 pred_result = inference_recognizer(model, video_file)
 
-pred_scores = pred_result.pred_scores.item.tolist()
+pred_scores = pred_result.pred_score.tolist()
 score_tuples = tuple(zip(range(len(pred_scores)), pred_scores))
 score_sorted = sorted(score_tuples, key=itemgetter(1), reverse=True)
 top5_label = score_sorted[:5]
@@ -185,7 +185,7 @@ We provide a [Dockerfile](https://github.com/open-mmlab/mmaction2/blob/main/dock
 to build an image. Ensure that your [docker version](https://docs.docker.com/engine/install/) >=19.03.
 
 ```shell
-# build an image with PyTorch 1.6.0, CUDA 10.1, CUDNN 7.
+# build an image with PyTorch 1.8.1, CUDA 10.2, CUDNN 7.
 # If you prefer other versions, just modified the Dockerfile
 docker build -f ./docker/Dockerfile --rm -t mmaction2 .
 ```

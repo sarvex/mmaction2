@@ -2,6 +2,7 @@
 from typing import Optional
 
 import torch.nn as nn
+from mmengine.device import get_device
 from torch import Tensor
 
 from mmaction.registry import MODELS
@@ -26,8 +27,7 @@ class TPNHead(TSNHead):
 
     def _init_new_cls(self) -> None:
         self.new_cls = nn.Conv3d(self.in_channels, self.num_classes, 1, 1, 0)
-        if next(self.fc_cls.parameters()).is_cuda:
-            self.new_cls = self.new_cls.cuda()
+        self.new_cls = self.new_cls.to(get_device())
         self.new_cls.weight.copy_(self.fc_cls.weight[..., None, None, None])
         self.new_cls.bias.copy_(self.fc_cls.bias)
 
@@ -53,7 +53,8 @@ class TPNHead(TSNHead):
                 x = self.avg_pool3d(x)
             if self.new_cls is None:
                 self._init_new_cls()
-            cls_score_feat_map = self.new_cls(x)
+            x = self.new_cls(x)
+            cls_score_feat_map = x.view(x.size(0), -1)
             return cls_score_feat_map
 
         if self.avg_pool2d is None:

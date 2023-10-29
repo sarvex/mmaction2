@@ -12,6 +12,7 @@ from mmengine import Config, DictAction
 from mmengine.dataset import Compose, pseudo_collate
 
 from mmaction.apis import init_recognizer
+from mmaction.utils import get_str_type
 
 FONTFACE = cv2.FONT_HERSHEY_COMPLEX_SMALL
 FONTSCALE = 1
@@ -138,7 +139,7 @@ def inference():
         # Forward the model
         with torch.no_grad():
             result = model.test_step(cur_data)[0]
-        scores = result.pred_scores.item.tolist()
+        scores = result.pred_score.tolist()
         scores = np.array(scores)
         score_cache.append(scores)
         scores_sum += scores
@@ -194,12 +195,12 @@ def main():
     pipeline = cfg.test_pipeline
     pipeline_ = pipeline.copy()
     for step in pipeline:
-        if 'SampleFrames' in step['type']:
+        if 'SampleFrames' in get_str_type(step['type']):
             sample_length = step['clip_len'] * step['num_clips']
             data['num_clips'] = step['num_clips']
             data['clip_len'] = step['clip_len']
             pipeline_.remove(step)
-        if step['type'] in EXCLUED_STEPS:
+        if get_str_type(step['type']) in EXCLUED_STEPS:
             # remove step to decode frames
             pipeline_.remove(step)
     test_pipeline = Compose(pipeline_)

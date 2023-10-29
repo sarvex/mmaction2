@@ -12,7 +12,7 @@ from mmengine.structures import InstanceData
 
 from mmaction.registry import INFERENCERS
 from mmaction.structures import ActionDataSample
-from mmaction.utils import ConfigType
+from mmaction.utils import ConfigType, get_str_type
 
 InstanceList = List[InstanceData]
 InputType = Union[str, np.ndarray]
@@ -167,34 +167,35 @@ class ActionRecogInferencer(BaseInferencer):
         # Alter data pipelines for decode
         if self.input_format == 'array':
             for i in range(len(test_pipeline)):
-                if 'Decode' in test_pipeline[i]['type']:
+                if 'Decode' in get_str_type(test_pipeline[i]['type']):
                     test_pipeline[i] = dict(type='ArrayDecode')
             test_pipeline = [
                 x for x in test_pipeline if 'Init' not in x['type']
             ]
         elif self.input_format == 'video':
-            if 'Init' not in test_pipeline[0]['type']:
+            if 'Init' not in get_str_type(test_pipeline[0]['type']):
                 test_pipeline = [dict(type='DecordInit')] + test_pipeline
             else:
                 test_pipeline[0] = dict(type='DecordInit')
             for i in range(len(test_pipeline)):
-                if 'Decode' in test_pipeline[i]['type']:
+                if 'Decode' in get_str_type(test_pipeline[i]['type']):
                     test_pipeline[i] = dict(type='DecordDecode')
         elif self.input_format == 'rawframes':
-            if 'Init' in test_pipeline[0]['type']:
+            if 'Init' in get_str_type(test_pipeline[0]['type']):
                 test_pipeline = test_pipeline[1:]
             for i in range(len(test_pipeline)):
-                if 'Decode' in test_pipeline[i]['type']:
+                if 'Decode' in get_str_type(test_pipeline[i]['type']):
                     test_pipeline[i] = dict(type='RawFrameDecode')
         # Alter data pipelines to close TTA, avoid OOM
         # Use center crop instead of multiple crop
         for i in range(len(test_pipeline)):
-            if test_pipeline[i]['type'] in ['ThreeCrop', 'TenCrop']:
+            if get_str_type(
+                    test_pipeline[i]['type']) in ['ThreeCrop', 'TenCrop']:
                 test_pipeline[i]['type'] = 'CenterCrop'
         # Use single clip for `Recognizer3D`
         if cfg.model.type == 'Recognizer3D':
             for i in range(len(test_pipeline)):
-                if test_pipeline[i]['type'] == 'SampleFrames':
+                if get_str_type(test_pipeline[i]['type']) == 'SampleFrames':
                     test_pipeline[i]['num_clips'] = 1
         # Pack multiple types of input format
         test_pipeline.insert(
@@ -355,6 +356,6 @@ class ActionRecogInferencer(BaseInferencer):
             dict: The output dictionary.
         """
         result = {}
-        result['pred_labels'] = data_sample.pred_labels.item.tolist()
-        result['pred_scores'] = data_sample.pred_scores.item.tolist()
+        result['pred_labels'] = data_sample.pred_label.tolist()
+        result['pred_scores'] = data_sample.pred_score.tolist()
         return result

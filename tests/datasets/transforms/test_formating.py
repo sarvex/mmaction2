@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import pytest
 import torch
-from mmengine.structures import InstanceData, LabelData
+from mmengine.structures import InstanceData
 from mmengine.testing import assert_dict_has_keys
 from numpy.testing import assert_array_equal
 
@@ -22,62 +22,77 @@ register_all_modules()
 class TestPackActionInputs(unittest.TestCase):
 
     def test_transform(self):
+        # none input
+        with self.assertRaises(ValueError):
+            results = PackActionInputs()(dict())
+
         # keypoint input
-        results = dict(keypoint=np.random.randn(1, 2, 300, 17, 3), label=1)
+        results = dict(keypoint=np.random.randn(2, 300, 17, 3), label=1)
         transform = PackActionInputs()
         results = transform(results)
         self.assertIn('inputs', results)
         self.assertIn('data_samples', results)
         self.assertIsInstance(results['inputs'], torch.Tensor)
-        self.assertEqual(results['data_samples'].gt_labels.item,
+        self.assertEqual(results['inputs'].shape, (2, 300, 17, 3))
+        self.assertEqual(results['data_samples'].gt_label,
                          torch.LongTensor([1]))
 
-        # audio input
-        data = dict(
-            audios=np.random.randn(3, 1, 128, 80),
-            label=[1],
-            filename='test.txt')
-
-        cfg = dict(type='PackActionInputs')
-        transform = TRANSFORMS.build(cfg)
-        results = transform(copy.deepcopy(data))
+        # heatmap_imgs input
+        results = dict(heatmap_imgs=np.random.randn(2, 17, 56, 56), label=1)
+        transform = PackActionInputs()
+        results = transform(results)
         self.assertIn('inputs', results)
+        self.assertIn('data_samples', results)
         self.assertIsInstance(results['inputs'], torch.Tensor)
-        # img input with label
+        self.assertEqual(results['inputs'].shape, (2, 17, 56, 56))
+        self.assertEqual(results['data_samples'].gt_label,
+                         torch.LongTensor([1]))
+
+        # audios input
+        results = dict(audios=np.random.randn(3, 1, 128, 80), label=[1])
+        transform = PackActionInputs()
+        results = transform(results)
+        self.assertIn('inputs', results)
+        self.assertIn('data_samples', results)
+        self.assertEqual(results['inputs'].shape, (3, 1, 128, 80))
+        self.assertIsInstance(results['inputs'], torch.Tensor)
+
+        # text input
+        results = dict(text=np.random.randn(77))
+        transform = PackActionInputs()
+        results = transform(results)
+        self.assertIn('inputs', results)
+        self.assertIn('data_samples', results)
+        self.assertEqual(results['inputs'].shape, (77, ))
+        self.assertIsInstance(results['inputs'], torch.Tensor)
+
+        # imgs input with label
         data = dict(
-            imgs=np.random.randn(256, 256, 3),
+            imgs=np.random.randn(2, 256, 256, 3),
             label=[1],
             filename='test.txt',
             original_shape=(256, 256, 3),
             img_shape=(256, 256, 3),
-            pad_shape=(256, 256, 3),
             flip_direction='vertical')
 
-        cfg = dict(type='PackActionInputs')
-        transform = TRANSFORMS.build(cfg)
+        transform = PackActionInputs()
         results = transform(copy.deepcopy(data))
         self.assertIn('inputs', results)
-        self.assertIsInstance(results['inputs'], torch.Tensor)
         self.assertIn('data_samples', results)
+        self.assertIsInstance(results['inputs'], torch.Tensor)
         self.assertIsInstance(results['data_samples'], ActionDataSample)
-        self.assertIn('img_shape', results['data_samples'].metainfo_keys())
-        self.assertIsInstance(results['data_samples'].gt_labels, LabelData)
+        self.assertEqual(results['data_samples'].img_shape, (256, 256, 3))
+        self.assertEqual(results['data_samples'].gt_label,
+                         torch.LongTensor([1]))
 
         # Test grayscale image
         data['imgs'] = data['imgs'].mean(-1)
         results = transform(copy.deepcopy(data))
         self.assertIn('inputs', results)
         self.assertIsInstance(results['inputs'], torch.Tensor)
-        self.assertEqual(results['inputs'].shape, (256, 256))
+        self.assertEqual(results['inputs'].shape, (2, 256, 256))
 
-        # Test without `img` and `gt_label`
-        del data['imgs']
-        del data['label']
-        with self.assertRaises(ValueError):
-            results = transform(copy.deepcopy(data))
-            self.assertNotIn('gt_labels', results['data_samples'])
-
-        # img input with gt_bboxes
+        # imgs input with gt_bboxes
         data = dict(
             imgs=np.random.randn(256, 256, 3),
             gt_bboxes=np.array([[0, 0, 340, 224]]),
@@ -85,8 +100,7 @@ class TestPackActionInputs(unittest.TestCase):
             proposals=np.array([[0, 0, 340, 224]]),
             filename='test.txt')
 
-        cfg = dict(type='PackActionInputs')
-        transform = TRANSFORMS.build(cfg)
+        transform = PackActionInputs()
         results = transform(copy.deepcopy(data))
         self.assertIn('inputs', results)
         self.assertIsInstance(results['inputs'], torch.Tensor)
@@ -95,6 +109,18 @@ class TestPackActionInputs(unittest.TestCase):
         self.assertIsInstance(results['data_samples'].gt_instances,
                               InstanceData)
         self.assertIsInstance(results['data_samples'].proposals, InstanceData)
+
+        # imgs and text input
+        data = dict(
+            imgs=np.random.randn(2, 256, 256, 3), text=np.random.randn(77))
+
+        transform = PackActionInputs(collect_keys=('imgs', 'text'))
+        results = transform(copy.deepcopy(data))
+        self.assertIn('inputs', results)
+        self.assertIn('data_samples', results)
+        self.assertIsInstance(results['inputs'], dict)
+        self.assertEqual(results['inputs']['imgs'].shape, (2, 256, 256, 3))
+        self.assertEqual(results['inputs']['text'].shape, (77, ))
 
     def test_repr(self):
         cfg = dict(
@@ -114,7 +140,7 @@ class TestPackLocalizationInputs(unittest.TestCase):
             gt_bbox=np.array([[0.1, 0.3], [0.375, 0.625]]),
             filename='test.txt')
 
-        cfg = dict(type='PackLocalizationInputs', keys='gt_bbox')
+        cfg = dict(type='PackLocalizationInputs', keys=('gt_bbox', ))
         transform = TRANSFORMS.build(cfg)
         results = transform(copy.deepcopy(data))
         self.assertIn('inputs', results)
@@ -165,11 +191,20 @@ def test_format_shape():
         # invalid input format
         FormatShape('NHWC')
 
-    # 'NCHW' input format
+    # 'NCHW' input format (RGB Modality)
     results = dict(
         imgs=np.random.randn(3, 224, 224, 3), num_clips=1, clip_len=3)
     format_shape = FormatShape('NCHW')
     assert format_shape(results)['input_shape'] == (3, 3, 224, 224)
+
+    # `NCHW` input format (Flow Modality)
+    results = dict(
+        imgs=np.random.randn(3, 224, 224, 2),
+        num_clips=1,
+        clip_len=3,
+        modality='Flow')
+    format_shape = FormatShape('NCHW')
+    assert format_shape(results)['input_shape'] == (1, 6, 224, 224)
 
     # `NCTHW` input format with num_clips=1, clip_len=3
     results = dict(
@@ -202,11 +237,6 @@ def test_format_shape():
         imgs=np.random.randn(12, 17, 56, 56), num_clips=2, clip_len=6)
     format_shape = FormatShape('NCTHW_Heatmap')
     assert format_shape(results)['input_shape'] == (2, 17, 6, 56, 56)
-
-    # `NCHW_Flow` input format
-    results = dict(imgs=np.random.randn(6, 224, 224), num_clips=1, clip_len=3)
-    format_shape = FormatShape('NCHW_Flow')
-    assert format_shape(results)['input_shape'] == (1, 6, 224, 224)
 
     # `NPTCHW` input format
     results = dict(

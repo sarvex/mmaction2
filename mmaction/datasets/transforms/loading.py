@@ -411,32 +411,32 @@ class SampleFrames(BaseTransform):
 
 @TRANSFORMS.register_module()
 class UniformSample(BaseTransform):
-    """Uniformly sample frames from the video. Currently used for Something-
-    Something V2 dataset. Modified from
-    https://github.com/facebookresearch/SlowFast/blob/64a
+    """Uniformly sample frames from the video.
+
+    Modified from https://github.com/facebookresearch/SlowFast/blob/64a
     bcc90ccfdcbb11cf91d6e525bed60e92a8796/slowfast/datasets/ssv2.py#L159.
 
-    To sample an n-frame clip from the video. UniformSampleFrames basically
+    To sample an n-frame clip from the video. UniformSample basically
     divides the video into n segments of equal length and randomly samples one
     frame from each segment.
 
     Required keys:
 
-    - total_frames
-    - start_index
+        - total_frames
+        - start_index
 
     Added keys:
 
-    - frame_inds
-    - clip_len
-    - frame_interval
-    - num_clips
+        - frame_inds
+        - clip_len
+        - frame_interval
+        - num_clips
 
     Args:
         clip_len (int): Frames of each sampled output clip.
-        num_clips (int): Number of clips to be sampled. Default: 1.
+        num_clips (int): Number of clips to be sampled. Defaults to 1.
         test_mode (bool): Store True when building test or validation dataset.
-            Default: False.
+            Defaults to False.
     """
 
     def __init__(self,
@@ -448,17 +448,24 @@ class UniformSample(BaseTransform):
         self.num_clips = num_clips
         self.test_mode = test_mode
 
-    def _get_sample_clips(self, num_frames: int) -> np.array:
-        """When video frames is shorter than target clip len, this strategy
-        would repeat sample frame, rather than loop sample in 'loop' mode. In
-        test mode, this strategy would sample the middle frame of each segment,
-        rather than set a random seed, and therefore only support sample 1
-        clip.
+    def _get_sample_clips(self, num_frames: int) -> np.ndarray:
+        """To sample an n-frame clip from the video. UniformSample basically
+        divides the video into n segments of equal length and randomly samples
+        one frame from each segment. When the duration of video frames is
+        shorter than the desired length of the target clip, this approach will
+        duplicate the sampled frame instead of looping the sample in "loop"
+        mode. In the test mode, when we need to sample multiple clips,
+        specifically 'n' clips, this method will further divide the segments
+        based on the number of clips to be sampled. The 'i-th' clip will.
+
+        sample the frame located at the position 'i * len(segment) / n'
+        within the segment.
 
         Args:
             num_frames (int): Total number of frame in the video.
+
         Returns:
-            seq (list): the indexes of frames of sampled from the video.
+            seq (np.ndarray): the indexes of frames of sampled from the video.
         """
         seg_size = float(num_frames - 1) / self.clip_len
         inds = []
@@ -477,7 +484,15 @@ class UniformSample(BaseTransform):
 
         return np.array(inds)
 
-    def transform(self, results: dict):
+    def transform(self, results: Dict) -> Dict:
+        """Perform the Uniform Sampling.
+
+        Args:
+            results (dict): The result dict.
+
+        Returns:
+            dict: The result dict.
+        """
         num_frames = results['total_frames']
 
         inds = self._get_sample_clips(num_frames)
@@ -490,7 +505,7 @@ class UniformSample(BaseTransform):
         results['num_clips'] = self.num_clips
         return results
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         repr_str = (f'{self.__class__.__name__}('
                     f'clip_len={self.clip_len}, '
                     f'num_clips={self.num_clips}, '
@@ -503,16 +518,19 @@ class UntrimmedSampleFrames(BaseTransform):
     """Sample frames from the untrimmed video.
 
     Required keys are "filename", "total_frames", added or modified keys are
-    "frame_inds", "frame_interval" and "num_clips".
+    "frame_inds", "clip_interval" and "num_clips".
 
     Args:
-        clip_len (int): The length of sampled clips. Default: 1.
+        clip_len (int): The length of sampled clips. Defaults to  1.
+        clip_interval (int): Clip interval of adjacent center of sampled
+            clips. Defaults to 16.
         frame_interval (int): Temporal interval of adjacent sampled frames.
-            Default: 16.
+            Defaults to 1.
     """
 
-    def __init__(self, clip_len=1, frame_interval=16):
+    def __init__(self, clip_len=1, clip_interval=16, frame_interval=1):
         self.clip_len = clip_len
+        self.clip_interval = clip_interval
         self.frame_interval = frame_interval
 
     def transform(self, results):
@@ -525,18 +543,21 @@ class UntrimmedSampleFrames(BaseTransform):
         total_frames = results['total_frames']
         start_index = results['start_index']
 
-        clip_centers = np.arange(self.frame_interval // 2, total_frames,
-                                 self.frame_interval)
+        clip_centers = np.arange(self.clip_interval // 2, total_frames,
+                                 self.clip_interval)
         num_clips = clip_centers.shape[0]
         frame_inds = clip_centers[:, None] + np.arange(
-            -(self.clip_len // 2), self.clip_len -
-            (self.clip_len // 2))[None, :]
+            -(self.clip_len // 2 * self.frame_interval),
+            self.frame_interval *
+            (self.clip_len -
+             (self.clip_len // 2)), self.frame_interval)[None, :]
         # clip frame_inds to legal range
         frame_inds = np.clip(frame_inds, 0, total_frames - 1)
 
         frame_inds = np.concatenate(frame_inds) + start_index
         results['frame_inds'] = frame_inds.astype(np.int32)
         results['clip_len'] = self.clip_len
+        results['clip_interval'] = self.clip_interval
         results['frame_interval'] = self.frame_interval
         results['num_clips'] = num_clips
         return results
@@ -544,6 +565,7 @@ class UntrimmedSampleFrames(BaseTransform):
     def __repr__(self):
         repr_str = (f'{self.__class__.__name__}('
                     f'clip_len={self.clip_len}, '
+                    f'clip_interval={self.clip_interval}, '
                     f'frame_interval={self.frame_interval})')
         return repr_str
 
@@ -731,15 +753,18 @@ class SampleAVAFrames(SampleFrames):
         fps = results['fps']
         timestamp = results['timestamp']
         timestamp_start = results['timestamp_start']
-        shot_info = results['shot_info']
+        start_index = results.get('start_index', 0)
+        if results.get('total_frames') is not None:
+            shot_info = (0, results['total_frames'])
+        else:
+            shot_info = results['shot_info']
 
-        center_index = fps * (timestamp - timestamp_start) + 1
+        center_index = fps * (timestamp - timestamp_start) + start_index
 
         skip_offsets = np.random.randint(
             -self.frame_interval // 2, (self.frame_interval + 1) // 2,
             size=self.clip_len)
         frame_inds = self._get_clips(center_index, skip_offsets, shot_info)
-        start_index = results.get('start_index', 0)
 
         frame_inds = np.array(frame_inds, dtype=np.int32) + start_index
         results['frame_inds'] = frame_inds
@@ -1210,6 +1235,18 @@ class DecordDecode(BaseTransform):
         results['original_shape'] = imgs[0].shape[:2]
         results['img_shape'] = imgs[0].shape[:2]
 
+        # we resize the gt_bboxes and proposals to their real scale
+        if 'gt_bboxes' in results:
+            h, w = results['img_shape']
+            scale_factor = np.array([w, h, w, h])
+            gt_bboxes = results['gt_bboxes']
+            gt_bboxes = (gt_bboxes * scale_factor).astype(np.float32)
+            results['gt_bboxes'] = gt_bboxes
+            if 'proposals' in results and results['proposals'] is not None:
+                proposals = results['proposals']
+                proposals = (proposals * scale_factor).astype(np.float32)
+                results['proposals'] = proposals
+
         return results
 
     def __repr__(self) -> str:
@@ -1381,11 +1418,7 @@ class RawFrameDecode(BaseTransform):
         for i, frame_idx in enumerate(results['frame_inds']):
             # Avoid loading duplicated frames
             if frame_idx in cache:
-                if modality == 'RGB':
-                    imgs.append(cp.deepcopy(imgs[cache[frame_idx]]))
-                else:
-                    imgs.append(cp.deepcopy(imgs[2 * cache[frame_idx]]))
-                    imgs.append(cp.deepcopy(imgs[2 * cache[frame_idx] + 1]))
+                imgs.append(cp.deepcopy(imgs[cache[frame_idx]]))
                 continue
             else:
                 cache[frame_idx] = i
@@ -1406,7 +1439,7 @@ class RawFrameDecode(BaseTransform):
                 x_frame = mmcv.imfrombytes(x_img_bytes, flag='grayscale')
                 y_img_bytes = self.file_client.get(y_filepath)
                 y_frame = mmcv.imfrombytes(y_img_bytes, flag='grayscale')
-                imgs.extend([x_frame, y_frame])
+                imgs.append(np.stack([x_frame, y_frame], axis=-1))
             else:
                 raise NotImplementedError
 
@@ -1584,32 +1617,26 @@ class ImageDecode(BaseTransform):
 
 
 @TRANSFORMS.register_module()
-class AudioDecodeInit(BaseTransform):
-    """Using librosa to initialize the audio reader.
+class LoadAudioFeature(BaseTransform):
+    """Load offline extracted audio features.
 
-    Required keys are ``audio_path``, added or modified keys are ``length``,
-    ``sample_rate``, ``audios``.
+    Required Keys:
+
+        - audio_path
+
+    Added Keys:
+
+        - length
+        - audios
 
     Args:
-        io_backend (str): io backend where frames are store.
-            Defaults to ``disk``.
-        sample_rate (int): Audio sampling times per second. Defaults to 16000.
-        pad_method (str): Padding method. Defaults to ``zero``.
+        pad_method (str): Padding method. Defaults to ``'zero'``.
     """
 
-    def __init__(self,
-                 io_backend: str = 'disk',
-                 sample_rate: int = 16000,
-                 pad_method: str = 'zero',
-                 **kwargs) -> None:
-        self.io_backend = io_backend
-        self.sample_rate = sample_rate
-        if pad_method in ['random', 'zero']:
-            self.pad_method = pad_method
-        else:
+    def __init__(self, pad_method: str = 'zero') -> None:
+        if pad_method not in ['zero', 'random']:
             raise NotImplementedError
-        self.kwargs = kwargs
-        self.file_client = None
+        self.pad_method = pad_method
 
     @staticmethod
     def _zero_pad(shape: int) -> np.ndarray:
@@ -1619,70 +1646,10 @@ class AudioDecodeInit(BaseTransform):
     @staticmethod
     def _random_pad(shape: int) -> np.ndarray:
         """Random padding method."""
-        # librosa load raw audio file into a distribution of -1~+1
-        return np.random.rand(shape).astype(np.float32) * 2 - 1
-
-    def transform(self, results: dict) -> dict:
-        """Perform the librosa initialization.
-
-        Args:
-            results (dict): The resulting dict to be modified and passed
-                to the next transform in pipeline.
-        """
-        try:
-            import librosa
-        except ImportError:
-            raise ImportError('Please install librosa first.')
-
-        if self.file_client is None:
-            self.file_client = FileClient(self.io_backend, **self.kwargs)
-        if osp.exists(results['audio_path']):
-            file_obj = io.BytesIO(self.file_client.get(results['audio_path']))
-            y, sr = librosa.load(file_obj, sr=self.sample_rate)
-        else:
-            # Generate a random dummy 10s input
-            pad_func = getattr(self, f'_{self.pad_method}_pad')
-            y = pad_func(int(round(10.0 * self.sample_rate)))
-            sr = self.sample_rate
-
-        results['length'] = y.shape[0]
-        results['sample_rate'] = sr
-        results['audios'] = y
-        return results
-
-    def __repr__(self):
-        repr_str = (f'{self.__class__.__name__}('
-                    f'io_backend={self.io_backend}, '
-                    f'sample_rate={self.sample_rate}, '
-                    f'pad_method={self.pad_method})')
-        return repr_str
-
-
-@TRANSFORMS.register_module()
-class LoadAudioFeature(BaseTransform):
-    """Load offline extracted audio features.
-
-    Required keys are "audio_path", added or modified keys are "length",
-    audios".
-    """
-
-    def __init__(self, pad_method='zero'):
-        if pad_method not in ['zero', 'random']:
-            raise NotImplementedError
-        self.pad_method = pad_method
-
-    @staticmethod
-    def _zero_pad(shape):
-        """Zero padding method."""
-        return np.zeros(shape, dtype=np.float32)
-
-    @staticmethod
-    def _random_pad(shape):
-        """Random padding method."""
         # spectrogram is normalized into a distribution of 0~1
         return np.random.rand(shape).astype(np.float32)
 
-    def transform(self, results):
+    def transform(self, results: Dict) -> Dict:
         """Perform the numpy loading.
 
         Args:
@@ -1701,65 +1668,9 @@ class LoadAudioFeature(BaseTransform):
         results['audios'] = feature_map
         return results
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         repr_str = (f'{self.__class__.__name__}('
                     f'pad_method={self.pad_method})')
-        return repr_str
-
-
-@TRANSFORMS.register_module()
-class AudioDecode(BaseTransform):
-    """Sample the audio w.r.t. the frames selected.
-
-    Args:
-        fixed_length (int): As the audio clip selected by frames sampled may
-            not be exactly the same, ``fixed_length`` will truncate or pad them
-            into the same size. Defaults to 32000.
-
-    Required keys are ``frame_inds``, ``num_clips``, ``total_frames``,
-    ``length``, added or modified keys are ``audios``, ``audios_shape``.
-    """
-
-    def __init__(self, fixed_length: int = 32000) -> None:
-        self.fixed_length = fixed_length
-
-    def transform(self, results: dict) -> dict:
-        """Perform the ``AudioDecode`` to pick audio clips."""
-        audio = results['audios']
-        frame_inds = results['frame_inds']
-        num_clips = results['num_clips']
-        resampled_clips = list()
-        frame_inds = frame_inds.reshape(num_clips, -1)
-        for clip_idx in range(num_clips):
-            clip_frame_inds = frame_inds[clip_idx]
-            start_idx = max(
-                0,
-                int(
-                    round((clip_frame_inds[0] + 1) / results['total_frames'] *
-                          results['length'])))
-            end_idx = min(
-                results['length'],
-                int(
-                    round((clip_frame_inds[-1] + 1) / results['total_frames'] *
-                          results['length'])))
-            cropped_audio = audio[start_idx:end_idx]
-            if cropped_audio.shape[0] >= self.fixed_length:
-                truncated_audio = cropped_audio[:self.fixed_length]
-            else:
-                truncated_audio = np.pad(
-                    cropped_audio,
-                    ((0, self.fixed_length - cropped_audio.shape[0])),
-                    mode='constant')
-
-            resampled_clips.append(truncated_audio)
-
-        results['audios'] = np.array(resampled_clips)
-        results['audios_shape'] = results['audios'].shape
-        return results
-
-    def __repr__(self):
-        repr_str = self.__class__.__name__
-        repr_str += f"(fixed_length='{self.fixed_length}')"
         return repr_str
 
 
@@ -1803,19 +1714,32 @@ class BuildPseudoClip(BaseTransform):
 class AudioFeatureSelector(BaseTransform):
     """Sample the audio feature w.r.t. the frames selected.
 
-    Required keys are "audios", "frame_inds", "num_clips", "length",
-    "total_frames", added or modified keys are "audios", "audios_shape".
+    Required Keys:
+
+        - audios
+        - frame_inds
+        - num_clips
+        - length
+        - total_frames
+
+    Modified Keys:
+
+        - audios
+
+    Added Keys:
+
+        - audios_shape
 
     Args:
         fixed_length (int): As the features selected by frames sampled may
             not be exactly the same, `fixed_length` will truncate or pad them
-            into the same size. Default: 128.
+            into the same size. Defaults to 128.
     """
 
-    def __init__(self, fixed_length=128):
+    def __init__(self, fixed_length: int = 128) -> None:
         self.fixed_length = fixed_length
 
-    def transform(self, results):
+    def transform(self, results: Dict) -> Dict:
         """Perform the ``AudioFeatureSelector`` to pick audio feature clips.
 
         Args:
@@ -1854,7 +1778,7 @@ class AudioFeatureSelector(BaseTransform):
         results['audios_shape'] = results['audios'].shape
         return results
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         repr_str = (f'{self.__class__.__name__}('
                     f'fix_length={self.fixed_length})')
         return repr_str
